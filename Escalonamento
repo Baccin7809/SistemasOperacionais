@@ -1,0 +1,120 @@
+#include <iostream>
+#include <queue>
+#include <vector>
+#include <thread>
+#include <chrono>
+
+struct Thread {
+    int id;
+    int tempoRestante;
+    std::string estado;
+
+    Thread(int id, int tempoExecucao) 
+        : id(id), tempoRestante(tempoExecucao), estado("pronto") {}
+};
+
+struct Processo {
+    int id;
+    std::vector<Thread> threads;
+
+    Processo(int id, int numThreads, int tempoExecucaoTotal) 
+        : id(id) {
+        // Cada thread recebe uma parte do tempo total de execução do processo
+        int tempoPorThread = tempoExecucaoTotal / numThreads;
+        for (int i = 0; i < numThreads; ++i) {
+            threads.emplace_back(i, tempoPorThread);
+        }
+    }
+
+    bool finalizado() const {
+        // Verifica se todas as threads do processo foram finalizadas
+        for (const auto &thread : threads) {
+            if (thread.tempoRestante > 0) {
+                return false; // Ainda há threads com tempo de execução restante
+            }
+        }
+        return true; // Todas as threads foram finalizadas
+    }
+};
+
+void executarThread(Thread &thread, int quantum) {
+    if (thread.estado == "Finalizado") return;
+
+    thread.estado = "Executando";
+    std::cout << "Thread " << thread.id << " está " << thread.estado 
+              << " com " << thread.tempoRestante << " segundos restantes.\n";
+
+    // Executar o tempo do quantum ou o tempo restante
+    int tempoExecutado = (thread.tempoRestante < quantum) ? thread.tempoRestante : quantum;
+    std::this_thread::sleep_for(std::chrono::seconds(tempoExecutado));
+
+    thread.tempoRestante -= tempoExecutado;
+
+    if (thread.tempoRestante > 0) {
+        thread.estado = "Pronto";
+        std::cout << "Thread " << thread.id << " não terminou. Voltando para a fila com " 
+                  << thread.tempoRestante << " segundos restantes.\n";
+    } else {
+        thread.estado = "Finalizado";
+        std::cout << "Thread " << thread.id << " foi " << thread.estado << "\n";
+    }
+}
+
+void simularEscalonamentoRoundRobin(std::queue<Processo> &filaProcesso, int quantum) {
+    while (!filaProcesso.empty()) {
+        Processo processoAtual = filaProcesso.front();
+        filaProcesso.pop();
+
+        std::cout << "\nProcesso " << processoAtual.id << " está sendo executado.\n";
+
+        bool processoFinalizado = true;
+
+        // Executar as threads do processo atual
+        for (auto &thread : processoAtual.threads) {
+            if (thread.tempoRestante > 0) {
+                executarThread(thread, quantum);
+            }
+
+            // Se ao menos uma thread ainda tem tempo restante, o processo não foi finalizado
+            if (thread.tempoRestante > 0) {
+                processoFinalizado = false;
+            }
+        }
+
+        // Se o processo não foi finalizado, volta para a fila
+        if (!processoFinalizado) {
+            filaProcesso.push(processoAtual);
+        } else {
+            std::cout << "Processo " << processoAtual.id << " foi finalizado completamente.\n";
+        }
+    }
+
+    // Finalizar após todos os processos serem encerrados
+    std::cout << "Todos os processos e threads foram encerrados.\n";
+}
+
+// Função para adicionar processos dinamicamente
+void adicionarProcesso(std::queue<Processo> &filaProcesso, int id, int numThreads, int tempoExecucao) {
+    Processo novoProcesso(id, numThreads, tempoExecucao);
+    filaProcesso.push(novoProcesso);
+    std::cout << "Processo " << id << " foi adicionado com " << numThreads 
+              << " threads, totalizando " << tempoExecucao << " segundos de execução.\n";
+}
+
+int main() {
+    // Criando a fila de processos
+    std::queue<Processo> filaProcesso;
+    
+    // Adicionando 2 processos dinamicamente
+    adicionarProcesso(filaProcesso, 1, 2, 15); // Processo 1 com 2 threads e tempo total de 6 segundos
+    adicionarProcesso(filaProcesso, 2, 3, 9); // Processo 2 com 3 threads e tempo total de 9 segundos
+
+    // Definindo o quantum para o Round Robin
+    int quantum = 3;
+
+    // Iniciando o escalonamento Round Robin
+    std::cout << "Iniciando o escalonamento Round Robin com quantum de " << quantum << " segundos...\n";
+    simularEscalonamentoRoundRobin(filaProcesso, quantum);
+
+    return 0;
+}
