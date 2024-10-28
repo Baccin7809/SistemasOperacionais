@@ -1,0 +1,166 @@
+#include <iostream>
+#include <queue>
+#include <vector>
+#include <thread>
+#include <chrono>
+#include <mutex>
+#include <memory>
+
+struct Thread {
+    int id;
+    int tempoRestante;
+    std::string estado;
+    std::mutex mtx;
+
+    Thread(int id, int tempoExecucao) 
+        : id(id), tempoRestante(tempoExecucao), estado("pronto") {}
+    
+    void executar(int quantum) {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (estado == "Finalizado") return;
+
+        estado = "Executando";
+        std::cout << "Thread " << id << " está " << estado 
+                  << " com " << tempoRestante << " segundos restantes.\n";
+
+        int tempoExecutado = (tempoRestante < quantum) ? tempoRestante : quantum;
+        std::this_thread::sleep_for(std::chrono::seconds(tempoExecutado));
+
+        tempoRestante -= tempoExecutado;
+
+        if (tempoRestante > 0) {
+            estado = "Pronto";
+            std::cout << "Thread " << id << " não terminou. Voltando para a fila com " 
+                      << tempoRestante << " segundos restantes.\n";
+        } else {
+            estado = "Finalizado";
+            std::cout << "Thread " << id << " foi " << estado << "\n";
+        }
+    }
+
+    void executarCompleto() {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (estado == "Finalizado") return;
+
+        estado = "Executando";
+        std::cout << "Thread " << id << " está " << estado 
+                  << " com " << tempoRestante << " segundos restantes.\n";
+
+        std::this_thread::sleep_for(std::chrono::seconds(tempoRestante));
+        tempoRestante = 0;
+
+        estado = "Finalizado";
+        std::cout << "Thread " << id << " foi " << estado << "\n";
+    }
+};
+
+struct Processo {
+    int id;
+    std::vector<std::shared_ptr<Thread>> threads;
+
+    Processo(int id, int numThreads, int tempoExecucaoTotal) 
+        : id(id) {
+        int tempoPorThread = tempoExecucaoTotal / numThreads;
+        for (int i = 0; i < numThreads; ++i) {
+            threads.push_back(std::make_shared<Thread>(i, tempoPorThread));
+        }
+    }
+
+    bool finalizado() const {
+        for (const auto &thread : threads) {
+            if (thread->tempoRestante > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
+// Algoritmo Round Robin
+void simularEscalonamentoRoundRobin(std::queue<Processo> &filaProcesso, int quantum) {
+    while (!filaProcesso.empty()) {
+        Processo processoAtual = filaProcesso.front();
+        filaProcesso.pop();
+
+        std::cout << "\nProcesso " << processoAtual.id << " está sendo executado.\n";
+
+        bool processoFinalizado = true;
+        std::vector<std::thread> threadsAtivas;
+
+        for (auto &thread : processoAtual.threads) {
+            if (thread->tempoRestante > 0) {
+                threadsAtivas.emplace_back(&Thread::executar, thread, quantum);
+                processoFinalizado = false;
+            }
+        }
+
+        for (auto &t : threadsAtivas) {
+            t.join();
+        }
+
+        if (!processoFinalizado) {
+            filaProcesso.push(processoAtual);
+        } else {
+            std::cout << "Processo " << processoAtual.id << " foi finalizado completamente.\n";
+        }
+    }
+
+    std::cout << "Todos os processos e threads foram encerrados.\n";
+}
+
+// Algoritmo FCFS
+void simularEscalonamentoFCFS(std::queue<Processo> &filaProcesso) {
+    while (!filaProcesso.empty()) {
+        Processo processoAtual = filaProcesso.front();
+        filaProcesso.pop();
+
+        std::cout << "\nProcesso " << processoAtual.id << " está sendo executado.\n";
+
+        std::vector<std::thread> threadsAtivas;
+        
+        for (auto &thread : processoAtual.threads) {
+            threadsAtivas.emplace_back(&Thread::executarCompleto, thread);
+        }
+
+        for (auto &t : threadsAtivas) {
+            t.join();
+        }
+
+        std::cout << "Processo " << processoAtual.id << " foi finalizado completamente.\n";
+    }
+
+    std::cout << "Todos os processos e threads foram encerrados.\n";
+}
+
+// Função para adicionar processos
+void adicionarProcesso(std::queue<Processo> &filaProcesso, int id, int numThreads, int tempoExecucao) {
+    Processo novoProcesso(id, numThreads, tempoExecucao);
+    filaProcesso.push(novoProcesso);
+    std::cout << "Processo " << id << " foi adicionado com " << numThreads 
+              << " threads, totalizando " << tempoExecucao << " segundos de execução.\n";
+}
+
+int main() {
+    std::queue<Processo> filaProcesso;
+    
+    adicionarProcesso(filaProcesso, 1, 2, 15);
+    adicionarProcesso(filaProcesso, 2, 3, 9);
+
+    int quantum = 3;
+
+    std::cout << "Escolha o algoritmo de escalonamento (1 para Round Robin, 2 para FCFS): ";
+    int escolha;
+    std::cin >> escolha;
+
+    if (escolha == 1) {
+        std::cout << "Iniciando o escalonamento Round Robin com quantum de " << quantum << " segundos...\n";
+        simularEscalonamentoRoundRobin(filaProcesso, quantum);
+    } else if (escolha == 2) {
+        std::cout << "Iniciando o escalonamento FCFS...\n";
+        simularEscalonamentoFCFS(filaProcesso);
+    } else {
+        std::cout << "Escolha inválida.\n";
+    }
+
+    return 0;
+}
